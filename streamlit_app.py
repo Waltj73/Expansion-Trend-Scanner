@@ -25,7 +25,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("📈 Narrow → Expansion Scanner")
+st.title("📈 Narrow → Expansion Trend Scanner")
 
 st.markdown("""
 This scanner searches for:
@@ -80,11 +80,16 @@ def get_tickers(group):
 
     elif group == "S&P 500":
 
-        table = pd.read_html(
-            "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-        )
+        try:
+            table = pd.read_html(
+                "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+            )
 
-        return table[0]["Symbol"].tolist()
+            return table[0]["Symbol"].tolist()
+
+        except:
+            st.error("Failed to load S&P 500 list.")
+            return []
 
     else:
 
@@ -96,7 +101,7 @@ def get_tickers(group):
 
 
 # ============================================
-# SCORING
+# SCORE FUNCTION
 # ============================================
 
 def calculate_score(row):
@@ -125,7 +130,7 @@ def calculate_score(row):
 
 
 # ============================================
-# SCANNER
+# SCAN FUNCTION
 # ============================================
 
 def scan_ticker(ticker):
@@ -140,6 +145,9 @@ def scan_ticker(ticker):
             progress=False
         )
 
+        if df.empty:
+            return None
+
         if len(df) < 250:
             return None
 
@@ -148,35 +156,35 @@ def scan_ticker(ticker):
         # ====================================
 
         df["EMA20"] = EMAIndicator(
-            df["Close"],
+            close=df["Close"],
             window=20
         ).ema_indicator()
 
         df["SMA200"] = SMAIndicator(
-            df["Close"],
+            close=df["Close"],
             window=200
         ).sma_indicator()
 
         atr = AverageTrueRange(
-            df["High"],
-            df["Low"],
-            df["Close"],
+            high=df["High"],
+            low=df["Low"],
+            close=df["Close"],
             window=14
         )
 
         df["ATR"] = atr.average_true_range()
 
         adx = ADXIndicator(
-            df["High"],
-            df["Low"],
-            df["Close"],
+            high=df["High"],
+            low=df["Low"],
+            close=df["Close"],
             window=14
         )
 
         df["ADX"] = adx.adx()
 
         bb = BollingerBands(
-            df["Close"],
+            close=df["Close"],
             window=20,
             window_dev=2
         )
@@ -258,6 +266,10 @@ if scan_button:
 
     tickers = get_tickers(scan_group)
 
+    if len(tickers) == 0:
+        st.error("No tickers loaded.")
+        st.stop()
+
     results = []
 
     progress = st.progress(0)
@@ -266,50 +278,64 @@ if scan_button:
 
         result = scan_ticker(ticker)
 
-        if result:
+        if result is not None:
             results.append(result)
 
         progress.progress((i + 1) / len(tickers))
 
-    if results:
+    # ====================================
+    # RESULTS
+    # ====================================
 
-        results_df = pd.DataFrame(results)
+    if len(results) == 0:
+        st.error("No results returned.")
+        st.stop()
 
-        # Remove failed scans
-        results_df = results_df.dropna(subset=["Score"])
+    results_df = pd.DataFrame(results)
 
-        # Sort best scores first
-        results_df = results_df.sort_values(
-            by="Score",
-            ascending=False
-        )
+    # Ensure Score column exists
+    if "Score" not in results_df.columns:
+        st.error("No valid scan results returned.")
+        st.dataframe(results_df)
+        st.stop()
 
-        # ====================================
-        # RESULTS TABLE
-        # ====================================
+    # Remove failed rows
+    results_df = results_df[
+        results_df["Score"].notna()
+    ]
 
-        st.subheader("📊 Scan Results")
+    # Sort
+    results_df = results_df.sort_values(
+        by="Score",
+        ascending=False
+    )
 
-        st.dataframe(
-            results_df,
-            use_container_width=True
-        )
+    # ====================================
+    # RESULTS TABLE
+    # ====================================
 
-        # ====================================
-        # TOP SETUPS
-        # ====================================
+    st.subheader("📊 Scan Results")
 
-        st.subheader("🔥 Top Setups")
+    st.dataframe(
+        results_df,
+        use_container_width=True
+    )
 
-        top = results_df[
-            results_df["Score"] >= 7
-        ]
+    # ====================================
+    # TOP SETUPS
+    # ====================================
 
-        if len(top) > 0:
+    st.subheader("🔥 Top Setups")
 
-            for _, row in top.iterrows():
+    top = results_df[
+        results_df["Score"] >= 7
+    ]
 
-                st.markdown(f"""
+    if len(top) > 0:
+
+        for _, row in top.iterrows():
+
+            st.markdown(f"""
 ### {row['Ticker']}
 
 - Score: **{row['Score']}**
@@ -318,8 +344,8 @@ if scan_button:
 - EMA20 Rising: **{row['EMA20 Rising']}**
 - Compression: **{row['Compression']}**
 - Near EMA20: **{row['Near EMA20']}**
-                """)
+            """)
 
-        else:
+    else:
 
-            st.info("No strong setups found.")
+        st.info("No strong setups found.")
