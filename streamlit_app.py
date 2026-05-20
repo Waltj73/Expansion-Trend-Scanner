@@ -34,7 +34,7 @@ This scanner searches for:
 ✅ Rising 20 EMA  
 ✅ Compression / narrow conditions  
 ✅ Bullish momentum alignment  
-✅ Potential early expansion setups
+✅ Expansion state detection
 """)
 
 
@@ -128,6 +128,14 @@ def calculate_score(row):
     if row["Momentum Bull"]:
         score += 1
 
+    # Bonus for narrow state
+    if row["State"] == "NARROW":
+        score += 2
+
+    # Small bonus for expanding
+    if row["State"] == "EXPANDING":
+        score += 1
+
     return score
 
 
@@ -141,6 +149,22 @@ def checkmark(value):
         return "✅"
     else:
         return "❌"
+
+
+# ============================================
+# STATE DETECTION
+# ============================================
+
+def determine_state(distance_ratio):
+
+    if distance_ratio < 1:
+        return "NARROW"
+
+    elif distance_ratio < 2.5:
+        return "EXPANDING"
+
+    else:
+        return "EXTENDED"
 
 
 # ============================================
@@ -238,9 +262,12 @@ def scan_ticker(ticker):
             latest_close - latest_ema20
         )
 
+        distance_ratio = (
+            distance_from_ema / latest_atr
+        )
+
         near_ema20 = (
-            distance_from_ema
-            < latest_atr * 1.5
+            distance_ratio < 1.5
         )
 
         compression = (
@@ -253,6 +280,12 @@ def scan_ticker(ticker):
         momentum_bull = latest_close > latest_ema20
 
         # ====================================
+        # STATE
+        # ====================================
+
+        state = determine_state(distance_ratio)
+
+        # ====================================
         # RESULT
         # ====================================
 
@@ -262,7 +295,10 @@ def scan_ticker(ticker):
             "EMA20": round(latest_ema20, 2),
             "SMA200": round(latest_sma200, 2),
             "ADX": round(latest_adx, 2),
-            "Distance From EMA": round(distance_from_ema, 2),
+
+            "Distance Ratio": round(distance_ratio, 2),
+
+            "State": state,
 
             "Above200": above200,
             "EMA20 Rising": ema20_rising,
@@ -309,10 +345,6 @@ if scan_button:
 
         progress.progress((i + 1) / len(tickers))
 
-    # ====================================
-    # RESULTS
-    # ====================================
-
     if len(results) == 0:
         st.error("No results returned.")
         st.stop()
@@ -324,13 +356,12 @@ if scan_button:
         st.dataframe(results_df)
         st.stop()
 
-    # Remove failed rows
     results_df = results_df[
         results_df["Score"].notna()
     ]
 
     # ====================================
-    # CHECKMARK COLUMNS
+    # CHECKMARKS
     # ====================================
 
     bool_cols = [
@@ -355,15 +386,15 @@ if scan_button:
     )
 
     # ====================================
-    # DATAFRAME STYLING
+    # STYLE SCORE
     # ====================================
 
     def highlight_score(val):
 
-        if val >= 8:
+        if val >= 10:
             return "background-color: green; color: white"
 
-        elif val >= 6:
+        elif val >= 8:
             return "background-color: orange; color: black"
 
         else:
@@ -375,7 +406,7 @@ if scan_button:
     )
 
     # ====================================
-    # RESULTS TABLE
+    # DISPLAY
     # ====================================
 
     st.subheader("📊 Scan Results")
@@ -392,7 +423,7 @@ if scan_button:
     st.subheader("🔥 Top Setups")
 
     top = results_df[
-        results_df["Score"] >= 7
+        results_df["Score"] >= 8
     ]
 
     if len(top) > 0:
@@ -402,13 +433,11 @@ if scan_button:
             st.markdown(f"""
 ### {row['Ticker']}
 
+- State: **{row['State']}**
 - Score: **{row['Score']}**
 - ADX: **{row['ADX']}**
-- Above 200: **{row['Above200']}**
-- EMA20 Rising: **{row['EMA20 Rising']}**
-- Compression: **{row['Compression']}**
-- Near EMA20: **{row['Near EMA20']}**
-            """)
+- Distance Ratio: **{row['Distance Ratio']}**
+""")
 
     else:
 
