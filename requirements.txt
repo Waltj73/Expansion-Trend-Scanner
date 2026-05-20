@@ -3,3 +3,5 @@ pandas
 numpy
 yfinance
 ta
+lxml
+html5lib
