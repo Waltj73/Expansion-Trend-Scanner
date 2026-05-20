@@ -32,9 +32,9 @@ This scanner searches for:
 
 ✅ Stocks above the 200 SMA  
 ✅ Rising 20 EMA  
-✅ Compression / narrow conditions  
+✅ EMA separation states  
 ✅ Bullish momentum alignment  
-✅ Expansion state detection
+✅ Compression → Expansion environments
 """)
 
 
@@ -103,41 +103,6 @@ def get_tickers(group):
 
 
 # ============================================
-# SCORE FUNCTION
-# ============================================
-
-def calculate_score(row):
-
-    score = 0
-
-    if row["Above200"]:
-        score += 2
-
-    if row["EMA20 Rising"]:
-        score += 2
-
-    if row["Near EMA20"]:
-        score += 2
-
-    if row["Compression"]:
-        score += 2
-
-    if row["ADX Strong"]:
-        score += 1
-
-    if row["Momentum Bull"]:
-        score += 1
-
-    if row["State"] == "NARROW":
-        score += 2
-
-    if row["State"] == "EXPANDING":
-        score += 1
-
-    return score
-
-
-# ============================================
 # CHECKMARK FORMATTER
 # ============================================
 
@@ -153,16 +118,49 @@ def checkmark(value):
 # STATE DETECTION
 # ============================================
 
-def determine_state(distance_ratio):
+def determine_state(ema_distance_ratio):
 
-    if distance_ratio < 1:
+    if ema_distance_ratio < 2:
         return "NARROW"
 
-    elif distance_ratio < 2.5:
-        return "EXPANDING"
+    elif ema_distance_ratio < 6:
+        return "HEALTHY"
 
     else:
-        return "EXTENDED"
+        return "WIDE"
+
+
+# ============================================
+# SCORE FUNCTION
+# ============================================
+
+def calculate_score(row):
+
+    score = 0
+
+    if row["Above200"]:
+        score += 2
+
+    if row["EMA20 Rising"]:
+        score += 2
+
+    if row["Compression"]:
+        score += 2
+
+    if row["ADX Strong"]:
+        score += 1
+
+    if row["Momentum Bull"]:
+        score += 1
+
+    # Favor Narrow / Healthy
+    if row["State"] == "NARROW":
+        score += 2
+
+    elif row["State"] == "HEALTHY":
+        score += 1
+
+    return score
 
 
 # ============================================
@@ -188,7 +186,7 @@ def scan_ticker(ticker):
             return None
 
         # ====================================
-        # FIX DATA DIMENSIONS
+        # FIX DIMENSIONS
         # ====================================
 
         close = df["Close"].squeeze()
@@ -241,6 +239,7 @@ def scan_ticker(ticker):
         latest_close = close.iloc[-1]
         latest_ema20 = ema20_series.iloc[-1]
         latest_sma200 = sma200_series.iloc[-1]
+
         latest_atr = atr_series.iloc[-1]
         latest_adx = adx_series.iloc[-1]
         latest_bb_width = bb_width.iloc[-1]
@@ -256,18 +255,6 @@ def scan_ticker(ticker):
             > ema20_series.iloc[-5]
         )
 
-        distance_from_ema = abs(
-            latest_close - latest_ema20
-        )
-
-        distance_ratio = (
-            distance_from_ema / latest_atr
-        )
-
-        near_ema20 = (
-            distance_ratio < 1.5
-        )
-
         compression = (
             latest_bb_width
             < bb_width.rolling(20).mean().iloc[-1]
@@ -278,10 +265,32 @@ def scan_ticker(ticker):
         momentum_bull = latest_close > latest_ema20
 
         # ====================================
-        # STATE
+        # EMA DISTANCE STATE
         # ====================================
 
-        state = determine_state(distance_ratio)
+        ema_distance = abs(
+            latest_ema20 - latest_sma200
+        )
+
+        ema_distance_ratio = (
+            ema_distance / latest_atr
+        )
+
+        state = determine_state(
+            ema_distance_ratio
+        )
+
+        # ====================================
+        # PRICE DISTANCE FROM EMA
+        # ====================================
+
+        price_distance = abs(
+            latest_close - latest_ema20
+        )
+
+        price_distance_ratio = (
+            price_distance / latest_atr
+        )
 
         # ====================================
         # RESULT
@@ -289,18 +298,25 @@ def scan_ticker(ticker):
 
         result = {
             "Ticker": ticker,
+
             "Close": round(latest_close, 2),
             "EMA20": round(latest_ema20, 2),
             "SMA200": round(latest_sma200, 2),
-            "ADX": round(latest_adx, 2),
 
-            "Distance Ratio": round(distance_ratio, 2),
+            "ADX": round(latest_adx, 2),
 
             "State": state,
 
+            "EMA Dist Ratio": round(
+                ema_distance_ratio, 2
+            ),
+
+            "Price Dist Ratio": round(
+                price_distance_ratio, 2
+            ),
+
             "Above200": above200,
             "EMA20 Rising": ema20_rising,
-            "Near EMA20": near_ema20,
             "Compression": compression,
             "ADX Strong": adx_strong,
             "Momentum Bull": momentum_bull,
@@ -354,6 +370,10 @@ if scan_button:
         st.dataframe(results_df)
         st.stop()
 
+    # ====================================
+    # REMOVE FAILURES
+    # ====================================
+
     results_df = results_df[
         results_df["Score"].notna()
     ]
@@ -365,7 +385,6 @@ if scan_button:
     bool_cols = [
         "Above200",
         "EMA20 Rising",
-        "Near EMA20",
         "Compression",
         "ADX Strong",
         "Momentum Bull"
@@ -389,10 +408,10 @@ if scan_button:
 
     def highlight_score(val):
 
-        if val >= 10:
+        if val >= 9:
             return "background-color: green; color: white"
 
-        elif val >= 8:
+        elif val >= 7:
             return "background-color: orange; color: black"
 
         else:
@@ -402,13 +421,25 @@ if scan_button:
     def highlight_state(val):
 
         if val == "NARROW":
-            return "background-color: #1E90FF; color: white; font-weight: bold"
+            return (
+                "background-color: #1E90FF;"
+                "color: white;"
+                "font-weight: bold"
+            )
 
-        elif val == "EXPANDING":
-            return "background-color: green; color: white; font-weight: bold"
+        elif val == "HEALTHY":
+            return (
+                "background-color: green;"
+                "color: white;"
+                "font-weight: bold"
+            )
 
-        elif val == "EXTENDED":
-            return "background-color: red; color: white; font-weight: bold"
+        elif val == "WIDE":
+            return (
+                "background-color: red;"
+                "color: white;"
+                "font-weight: bold"
+            )
 
         return ""
 
@@ -437,7 +468,7 @@ if scan_button:
     st.subheader("🔥 Top Setups")
 
     top = results_df[
-        results_df["Score"] >= 8
+        results_df["Score"] >= 7
     ]
 
     if len(top) > 0:
@@ -450,7 +481,8 @@ if scan_button:
 - State: **{row['State']}**
 - Score: **{row['Score']}**
 - ADX: **{row['ADX']}**
-- Distance Ratio: **{row['Distance Ratio']}**
+- EMA Distance Ratio: **{row['EMA Dist Ratio']}**
+- Price Distance Ratio: **{row['Price Dist Ratio']}**
 """)
 
     else:
