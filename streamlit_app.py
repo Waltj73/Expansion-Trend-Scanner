@@ -128,11 +128,9 @@ def calculate_score(row):
     if row["Momentum Bull"]:
         score += 1
 
-    # Bonus for narrow state
     if row["State"] == "NARROW":
         score += 2
 
-    # Small bonus for expanding
     if row["State"] == "EXPANDING":
         score += 1
 
@@ -386,7 +384,7 @@ if scan_button:
     )
 
     # ====================================
-    # STYLE SCORE
+    # STYLE FUNCTIONS
     # ====================================
 
     def highlight_score(val):
@@ -400,9 +398,25 @@ if scan_button:
         else:
             return "background-color: red; color: white"
 
-    styled_df = results_df.style.map(
-        highlight_score,
-        subset=["Score"]
+
+    def highlight_state(val):
+
+        if val == "NARROW":
+            return "background-color: #1E90FF; color: white; font-weight: bold"
+
+        elif val == "EXPANDING":
+            return "background-color: green; color: white; font-weight: bold"
+
+        elif val == "EXTENDED":
+            return "background-color: red; color: white; font-weight: bold"
+
+        return ""
+
+
+    styled_df = (
+        results_df.style
+        .map(highlight_score, subset=["Score"])
+        .map(highlight_state, subset=["State"])
     )
 
     # ====================================
