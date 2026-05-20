@@ -81,6 +81,7 @@ def get_tickers(group):
     elif group == "S&P 500":
 
         try:
+
             table = pd.read_html(
                 "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
             )
@@ -88,6 +89,7 @@ def get_tickers(group):
             return table[0]["Symbol"].tolist()
 
         except:
+
             st.error("Failed to load S&P 500 list.")
             return []
 
@@ -152,80 +154,91 @@ def scan_ticker(ticker):
             return None
 
         # ====================================
+        # FIX DATA DIMENSIONS
+        # ====================================
+
+        close = df["Close"].squeeze()
+        high = df["High"].squeeze()
+        low = df["Low"].squeeze()
+
+        # ====================================
         # INDICATORS
         # ====================================
 
-        df["EMA20"] = EMAIndicator(
-            close=df["Close"],
+        ema20_series = EMAIndicator(
+            close=close,
             window=20
         ).ema_indicator()
 
-        df["SMA200"] = SMAIndicator(
-            close=df["Close"],
+        sma200_series = SMAIndicator(
+            close=close,
             window=200
         ).sma_indicator()
 
-        atr = AverageTrueRange(
-            high=df["High"],
-            low=df["Low"],
-            close=df["Close"],
+        atr_series = AverageTrueRange(
+            high=high,
+            low=low,
+            close=close,
             window=14
-        )
+        ).average_true_range()
 
-        df["ATR"] = atr.average_true_range()
-
-        adx = ADXIndicator(
-            high=df["High"],
-            low=df["Low"],
-            close=df["Close"],
+        adx_series = ADXIndicator(
+            high=high,
+            low=low,
+            close=close,
             window=14
-        )
-
-        df["ADX"] = adx.adx()
+        ).adx()
 
         bb = BollingerBands(
-            close=df["Close"],
+            close=close,
             window=20,
             window_dev=2
         )
 
-        df["BB_Width"] = (
+        bb_width = (
             bb.bollinger_hband()
             - bb.bollinger_lband()
-        ) / df["Close"]
+        ) / close
 
-        latest = df.iloc[-1]
+        # ====================================
+        # LATEST VALUES
+        # ====================================
 
-        close = latest["Close"]
-        ema20 = latest["EMA20"]
-        sma200 = latest["SMA200"]
+        latest_close = close.iloc[-1]
+        latest_ema20 = ema20_series.iloc[-1]
+        latest_sma200 = sma200_series.iloc[-1]
+        latest_atr = atr_series.iloc[-1]
+        latest_adx = adx_series.iloc[-1]
+        latest_bb_width = bb_width.iloc[-1]
 
         # ====================================
         # CONDITIONS
         # ====================================
 
-        above200 = close > sma200
+        above200 = latest_close > latest_sma200
 
         ema20_rising = (
-            df["EMA20"].iloc[-1]
-            > df["EMA20"].iloc[-5]
+            ema20_series.iloc[-1]
+            > ema20_series.iloc[-5]
         )
 
-        distance_from_ema = abs(close - ema20)
+        distance_from_ema = abs(
+            latest_close - latest_ema20
+        )
 
         near_ema20 = (
             distance_from_ema
-            < latest["ATR"] * 1.5
+            < latest_atr * 1.5
         )
 
         compression = (
-            latest["BB_Width"]
-            < df["BB_Width"].rolling(20).mean().iloc[-1]
+            latest_bb_width
+            < bb_width.rolling(20).mean().iloc[-1]
         )
 
-        adx_strong = latest["ADX"] > 20
+        adx_strong = latest_adx > 20
 
-        momentum_bull = close > ema20
+        momentum_bull = latest_close > latest_ema20
 
         # ====================================
         # RESULT
@@ -233,10 +246,10 @@ def scan_ticker(ticker):
 
         result = {
             "Ticker": ticker,
-            "Close": round(close, 2),
-            "EMA20": round(ema20, 2),
-            "SMA200": round(sma200, 2),
-            "ADX": round(latest["ADX"], 2),
+            "Close": round(latest_close, 2),
+            "EMA20": round(latest_ema20, 2),
+            "SMA200": round(latest_sma200, 2),
+            "ADX": round(latest_adx, 2),
             "Distance From EMA": round(distance_from_ema, 2),
             "Above200": above200,
             "EMA20 Rising": ema20_rising,
@@ -293,7 +306,6 @@ if scan_button:
 
     results_df = pd.DataFrame(results)
 
-    # Ensure Score column exists
     if "Score" not in results_df.columns:
         st.error("No valid scan results returned.")
         st.dataframe(results_df)
@@ -304,7 +316,7 @@ if scan_button:
         results_df["Score"].notna()
     ]
 
-    # Sort
+    # Sort by best scores
     results_df = results_df.sort_values(
         by="Score",
         ascending=False
