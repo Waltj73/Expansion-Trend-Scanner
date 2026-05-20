@@ -132,6 +132,18 @@ def calculate_score(row):
 
 
 # ============================================
+# CHECKMARK FORMATTER
+# ============================================
+
+def checkmark(value):
+
+    if value:
+        return "✅"
+    else:
+        return "❌"
+
+
+# ============================================
 # SCAN FUNCTION
 # ============================================
 
@@ -251,6 +263,7 @@ def scan_ticker(ticker):
             "SMA200": round(latest_sma200, 2),
             "ADX": round(latest_adx, 2),
             "Distance From EMA": round(distance_from_ema, 2),
+
             "Above200": above200,
             "EMA20 Rising": ema20_rising,
             "Near EMA20": near_ema20,
@@ -316,10 +329,49 @@ if scan_button:
         results_df["Score"].notna()
     ]
 
-    # Sort by best scores
+    # ====================================
+    # CHECKMARK COLUMNS
+    # ====================================
+
+    bool_cols = [
+        "Above200",
+        "EMA20 Rising",
+        "Near EMA20",
+        "Compression",
+        "ADX Strong",
+        "Momentum Bull"
+    ]
+
+    for col in bool_cols:
+        results_df[col] = results_df[col].apply(checkmark)
+
+    # ====================================
+    # SORT
+    # ====================================
+
     results_df = results_df.sort_values(
         by="Score",
         ascending=False
+    )
+
+    # ====================================
+    # DATAFRAME STYLING
+    # ====================================
+
+    def highlight_score(val):
+
+        if val >= 8:
+            return "background-color: green; color: white"
+
+        elif val >= 6:
+            return "background-color: orange; color: black"
+
+        else:
+            return "background-color: red; color: white"
+
+    styled_df = results_df.style.map(
+        highlight_score,
+        subset=["Score"]
     )
 
     # ====================================
@@ -329,7 +381,7 @@ if scan_button:
     st.subheader("📊 Scan Results")
 
     st.dataframe(
-        results_df,
+        styled_df,
         use_container_width=True
     )
 
